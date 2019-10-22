@@ -755,7 +755,7 @@ std::string FragmentProgramDecompiler::BuildCode()
 	if (!clamp16_impl.empty())
 	{
 		OS <<
-		"#define clamp16 " << clamp16_impl << "\n";
+		"#define clamp16(x) " << clamp16_impl << "(x)\n";
 	}
 	else
 	{

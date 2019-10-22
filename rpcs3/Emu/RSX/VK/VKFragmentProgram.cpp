@@ -385,6 +385,7 @@ void VKFragmentProgram::Decompile(const RSXFragmentProgram& prog)
 	}
 
 	decompiler.device_props.emulate_depth_compare = !pdev->get_formats_support().d24_unorm_s8;
+	decompiler.device_props.clamp16_impl = "fwidth";
 	decompiler.Task();
 
 	shader.create(::glsl::program_domain::glsl_fragment_program, source);

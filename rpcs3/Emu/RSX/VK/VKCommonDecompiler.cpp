@@ -3,6 +3,7 @@
 #include "restore_new.h"
 #include "SPIRV/GlslangToSpv.h"
 #include "define_new_memleakdetect.h"
+#include "../Common/SPIRVCommon.h"
 
 namespace vk
 {
