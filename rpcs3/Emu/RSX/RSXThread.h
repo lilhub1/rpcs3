@@ -355,8 +355,6 @@ namespace rsx
 
 			vm::addr_t sink;                      // Memory location of the report
 			std::vector<vm::addr_t> sink_alias;   // Aliased memory addresses
-
-			u64 due_tsc;
 		};
 
 		enum sync_control
@@ -371,6 +369,7 @@ namespace rsx
 			// Delay before a report update operation is forced to retire
 			const u32 max_zcull_delay_us = 500;
 			const u32 min_zcull_delay_us = 50;
+			const u32 max_queue_depth = 32;
 
 			// Number of occlusion query slots available. Real hardware actually has far fewer units before choking
 			const u32 occlusion_query_count = 128;
@@ -382,9 +381,7 @@ namespace rsx
 
 			occlusion_query_info* m_current_task = nullptr;
 			u32 m_statistics_tag_id = 0;
-			u64 m_tsc = 0;
-			u32 m_cycles_delay = max_zcull_delay_us;
-			u32 m_backend_warn_threshold = max_zcull_delay_us / 2;
+			u64 m_next_tsc = 0;
 
 			std::vector<queued_report_write> m_pending_writes;
 			std::unordered_map<u32, u32> m_statistics_map;

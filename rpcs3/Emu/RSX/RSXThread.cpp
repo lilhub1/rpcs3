@@ -297,9 +297,9 @@ namespace rsx
 		if (conditional_render_enabled && conditional_render_test_address)
 		{
 			// Evaluate conditional rendering test
-			zcull_ctrl->read_barrier(this, conditional_render_test_address, 4, reports::sync_no_notify);
-			vm::ptr<CellGcmReportData> result = vm::cast(conditional_render_test_address);
-			conditional_render_test_failed = (result->value == 0);
+			//zcull_ctrl->read_barrier(this, conditional_render_test_address, 4, reports::sync_no_notify);
+			//vm::ptr<CellGcmReportData> result = vm::cast(conditional_render_test_address);
+			conditional_render_test_failed = false;//(result->value == 0);
 			conditional_render_test_address = 0;
 		}
 
@@ -2094,6 +2094,7 @@ namespace rsx
 
 		zcull_ctrl->set_enabled(this, zcull_rendering_enabled);
 		zcull_ctrl->set_active(this, zcull_rendering_enabled && testing_enabled && zcull_surface_active);
+		zcull_ctrl->update(this);
 	}
 
 	void thread::clear_zcull_stats(u32 type)
@@ -2594,7 +2595,6 @@ namespace rsx
 				if (!It->sink)
 				{
 					It->counter_tag = m_statistics_tag_id;
-					It->due_tsc = get_system_time() + m_cycles_delay;
 					It->sink = sink;
 					It->type = type;
 
@@ -2659,8 +2659,8 @@ namespace rsx
 				}
 
 				//All slots are occupied, try to pop the earliest entry
-				m_tsc += max_zcull_delay_us;
-				update(ptimer);
+				m_next_tsc = 0;
+				update(ptimer, m_pending_writes.front().sink);
 
 				retries++;
 			}
@@ -2697,8 +2697,6 @@ namespace rsx
 		{
 			if (m_current_task)
 				m_current_task->num_draws++;
-
-			m_cycles_delay = max_zcull_delay_us;
 		}
 
 		void ZCULL_control::write(vm::addr_t sink, u64 timestamp, u32 type, u32 value)
@@ -2824,10 +2822,6 @@ namespace rsx
 				ptimer->conditional_render_test_failed = vm::read32(ptimer->conditional_render_test_address) == 0;
 				ptimer->conditional_render_test_address = 0;
 			}
-
-			//Critical, since its likely a WAIT_FOR_IDLE type has been processed, all results are considered available
-			m_cycles_delay = min_zcull_delay_us;
-			m_tsc = std::max(m_tsc, get_system_time());
 		}
 
 		void ZCULL_control::update(::rsx::thread* ptimer, u32 sync_address)
@@ -2844,26 +2838,27 @@ namespace rsx
 				return;
 			}
 
-			// Update timestamp and proceed with processing only if there is work to be done
-			m_tsc = std::max(m_tsc, get_system_time());
-
 			if (!sync_address)
 			{
-				if (m_tsc < front.due_tsc)
+				if (ptimer->async_tasks_pending && front.query && !front.query->hint)
 				{
-					if (front.query && !front.query->hint && (front.due_tsc - m_tsc) <= m_backend_warn_threshold)
+					if (!active || ptimer->async_tasks_pending <= max_queue_depth)
 					{
-						if (front.type == CELL_GCM_ZPASS_PIXEL_CNT || front.type == CELL_GCM_ZCULL_STATS3)
-						{
-							// Imminent read
-							ptimer->sync_hint(FIFO_hint::hint_zcull_sync, reinterpret_cast<uintptr_t>(front.query));
-						}
-
+						// Zcull rendering stopped or too many reports are in the queue
+						ptimer->sync_hint(FIFO_hint::hint_zcull_sync, reinterpret_cast<uintptr_t>(front.query));
 						front.query->hint = true;
+						return;
 					}
+				}
 
-					// Avoid spamming backend with report status updates
+				if (const auto now = get_system_time(); now > m_next_tsc)
+				{
 					return;
+				}
+				else
+				{
+					// Schedule ahead
+					m_next_tsc = now + max_zcull_delay_us;
 				}
 			}
 
@@ -2898,7 +2893,7 @@ namespace rsx
 					verify(HERE), query->pending;
 
 					const bool implemented = (writer.type == CELL_GCM_ZPASS_PIXEL_CNT || writer.type == CELL_GCM_ZCULL_STATS3);
-					if (force_read || writer.due_tsc < m_tsc)
+					if (force_read)
 					{
 						if (implemented && !result && query->num_draws)
 						{
@@ -2932,13 +2927,6 @@ namespace rsx
 							}
 							else
 							{
-								if (!query->hint && (writer.due_tsc - m_tsc) <= m_backend_warn_threshold)
-								{
-									// Imminent read
-									ptimer->sync_hint(FIFO_hint::hint_zcull_sync, reinterpret_cast<uintptr_t>(query));
-									query->hint = true;
-								}
-
 								//Too early; abort
 								break;
 							}

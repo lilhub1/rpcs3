@@ -1737,8 +1737,9 @@ void VKGSRender::end()
 		u32 occlusion_id = m_occlusion_query_pool.find_free_slot();
 		if (occlusion_id == UINT32_MAX)
 		{
-			m_tsc += 100;
-			update(this);
+			// Force flush
+			LOG_ERROR(RSX, "[Performance Warning] Out of free occlusion slots. Forcing hard sync.");
+			ZCULL_control::sync(this);
 
 			occlusion_id = m_occlusion_query_pool.find_free_slot();
 			if (occlusion_id == UINT32_MAX)
